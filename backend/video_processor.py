@@ -9,6 +9,16 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+# Cookie file path (optional, place in project root)
+_COOKIE_FILE_PATH = str(__import__("pathlib").Path(__file__).parent.parent / "cookies.txt")
+
+def _cookie_opts():
+    import os
+    if os.path.exists(_COOKIE_FILE_PATH):
+        return {"cookiefile": _COOKIE_FILE_PATH}
+    return {}
+
+
 class VideoProcessor:
     """视频处理器，使用yt-dlp下载和转换视频"""
     
@@ -28,6 +38,7 @@ class VideoProcessor:
             'quiet': True,
             'no_warnings': True,
             'noplaylist': True,  # 强制只下载单个视频，不下载播放列表
+            **_cookie_opts(),
         }
     
     async def fetch_subtitles(self, url: str, output_dir: Path) -> tuple[Optional[str], Optional[str], Optional[str]]:
@@ -46,7 +57,7 @@ class VideoProcessor:
 
         try:
             # 1. 快速探测：获取视频信息和字幕可用性，不下载任何内容
-            check_opts = {"quiet": True, "no_warnings": True, "noplaylist": True}
+            check_opts = {"quiet": True, "no_warnings": True, "noplaylist": True, **_cookie_opts()}
             with yt_dlp.YoutubeDL(check_opts) as ydl:
                 info = await asyncio.to_thread(ydl.extract_info, url, False)
 
