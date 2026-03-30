@@ -5,6 +5,11 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+
+# 本地 Qwen2.5-VL-3B 默认配置
+_LOCAL_BASE_URL = "http://localhost:8081/v1"
+_LOCAL_MODEL    = "Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf"
+
 class Summarizer:
     """文本总结器，使用OpenAI API生成多语言摘要"""
     
@@ -15,26 +20,17 @@ class Summarizer:
         优先级：参数 > 环境变量。
         model 指定时会同时作为 fast_model 和 advanced_model 使用。
         """
-        effective_key = api_key or os.getenv("OPENAI_API_KEY")
-        effective_url = base_url or os.getenv("OPENAI_BASE_URL")
+        # 优先级：参数 > 环境变量 > 本地 Qwen2.5-VL-3B 默认值
+        effective_key = api_key or os.getenv("OPENAI_API_KEY", "dummy")
+        effective_url = base_url or os.getenv("OPENAI_BASE_URL", _LOCAL_BASE_URL)
 
-        if not effective_key:
-            logger.warning("未设置OPENAI_API_KEY环境变量，将无法使用摘要功能")
+        kwargs = {"api_key": effective_key, "base_url": effective_url}
+        logger.info(f"Summarizer 初始化: base_url={effective_url}")
+        self.client = openai.OpenAI(**kwargs)
 
-        if effective_key:
-            kwargs = {"api_key": effective_key}
-            if effective_url:
-                kwargs["base_url"] = effective_url
-                logger.info(f"OpenAI客户端已初始化，base_url={effective_url}")
-            else:
-                logger.info("OpenAI客户端已初始化，使用默认端点")
-            self.client = openai.OpenAI(**kwargs)
-        else:
-            self.client = None
-
-        # 允许前端指定模型，覆盖硬编码的 gpt-3.5-turbo / gpt-4o
-        self.fast_model     = model or "gpt-3.5-turbo"
-        self.advanced_model = model or "gpt-4o"
+        # 允许前端指定模型，默认使用本地 Qwen
+        self.fast_model     = model or os.getenv("OPENAI_MODEL", _LOCAL_MODEL)
+        self.advanced_model = model or os.getenv("OPENAI_MODEL", _LOCAL_MODEL)
         
         # 支持的语言映射
         self.language_map = {
@@ -178,7 +174,9 @@ class Summarizer:
                 {"role": "user", "content": user_prompt}
             ],
             max_tokens=4000,  # 对齐JS：优化/格式化阶段最大tokens≈4000
-            temperature=0.1
+            temperature=0.1,
+            frequency_penalty=0.35,
+            presence_penalty=0.1,
         )
         
         return response.choices[0].message.content
@@ -226,7 +224,9 @@ class Summarizer:
                         {"role": "user", "content": user_prompt}
                     ],
                     max_tokens=1200,  # 适应4000 tokens总限制
-                    temperature=0.1
+                    temperature=0.1,
+                    frequency_penalty=0.35,
+                    presence_penalty=0.1,
                 )
                 
                 optimized_chunk = response.choices[0].message.content
@@ -314,7 +314,9 @@ class Summarizer:
                     {"role": "user", "content": prompt}
                 ],
                 max_tokens=4000,  # 对齐JS：优化/格式化阶段最大tokens≈4000
-                temperature=0.1
+                temperature=0.1,
+                frequency_penalty=0.35,
+                presence_penalty=0.1,
             )
             optimized_text = response.choices[0].message.content or ""
             # 移除诸如 "# Transcript" / "## Transcript" 等标题
@@ -876,7 +878,9 @@ Core requirements:
                 {"role": "user", "content": user_prompt}
             ],
             max_tokens=1200,  # 适应4000 tokens总限制
-            temperature=0.05
+            temperature=0.05,
+            frequency_penalty=0.35,
+            presence_penalty=0.1,
         )
         
         return response.choices[0].message.content
@@ -1049,7 +1053,9 @@ Requirements:
                 {"role": "user", "content": user_prompt}
             ],
             max_tokens=3500,  # 控制在安全范围内，避免超出模型限制
-            temperature=0.3
+            temperature=0.3,
+            frequency_penalty=0.35,
+            presence_penalty=0.1,
         )
         
         summary = response.choices[0].message.content
@@ -1092,7 +1098,9 @@ Avoid using any subheadings or decorative separators, output content only."""
                         {"role": "user", "content": user_prompt}
                     ],
                     max_tokens=1000,  # 提升分块摘要容量以涵盖更多细节
-                    temperature=0.3
+                    temperature=0.3,
+                    frequency_penalty=0.35,
+                    presence_penalty=0.1,
                 )
                 
                 chunk_summary = response.choices[0].message.content
@@ -1187,7 +1195,9 @@ Requirements:
                     {"role": "user", "content": user_prompt}
                 ],
                 max_tokens=2500,  # 控制输出规模，兼顾上下文安全
-                temperature=0.3
+                temperature=0.3,
+                frequency_penalty=0.35,
+                presence_penalty=0.1,
             )
             
             return response.choices[0].message.content
@@ -1220,6 +1230,8 @@ Requirements:
                 ],
                 max_tokens=1200,
                 temperature=0.2,
+                frequency_penalty=0.35,
+                presence_penalty=0.1,
             )
             return resp.choices[0].message.content
         except Exception:
