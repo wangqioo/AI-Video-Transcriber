@@ -200,7 +200,9 @@ class Translator:
                     {"role": "user", "content": user_prompt}
                 ],
                 max_tokens=4000,
-                temperature=0.1
+                temperature=0.1,
+                frequency_penalty=0.35,
+                presence_penalty=0.1,
             )
             
             return response.choices[0].message.content
@@ -244,7 +246,9 @@ class Translator:
                         {"role": "user", "content": user_prompt}
                     ],
                     max_tokens=4000,
-                    temperature=0.1
+                    temperature=0.1,
+                    frequency_penalty=0.35,
+                    presence_penalty=0.1,
                 )
                 
                 translated_chunk = response.choices[0].message.content
