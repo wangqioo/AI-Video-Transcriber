@@ -372,6 +372,7 @@ async def process_video_task(
             "progress": 100,
             "message": "处理完成！",
             "video_title": video_title,
+            "raw_script": raw_script or "",
             "script": script_with_title,
             "summary": summary_with_source,
             "script_path": str(script_path),
