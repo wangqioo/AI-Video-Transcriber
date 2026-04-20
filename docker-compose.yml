@@ -16,9 +16,9 @@ services:
       # 服务器配置
       - HOST=0.0.0.0
       - PORT=8000
-    # volumes:
-      # 挂载临时文件目录，便于查看和管理下载的文件  
-      # - ./temp:/app/temp
+    volumes:
+      - ./temp:/app/temp
+      - ./data:/app/data
     restart: unless-stopped
     
     # 资源限制（可选）

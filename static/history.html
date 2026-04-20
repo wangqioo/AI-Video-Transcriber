@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>历史记录 · AI 视频转录器</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.2/marked.min.js"></script>
+  <style>
+    :root {
+      --font: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      --mono: 'DM Mono', 'Menlo', monospace;
+      --t: .18s;
+    }
+    [data-theme="light"] {
+      --bg:#F5F5F7;--bg2:#FFFFFF;--surface:#FFFFFF;--surface-2:#F5F5F7;--surface-3:#EBEBED;
+      --border:#E2E2E7;--border-2:#D0D0D8;--text:#1A1A1E;--text-2:#4A4A56;--text-3:#8A8A99;--text-4:#B8B8C8;
+      --accent:#2563EB;--accent-h:#1D4ED8;--accent-s:#EFF6FF;--accent-t:rgba(37,99,235,.1);--accent-glow:rgba(37,99,235,.15);
+      --success:#16A34A;--success-s:#F0FDF4;--error:#DC2626;--error-s:#FEF2F2;
+      --shadow-sm:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04);
+      --shadow:0 4px 16px rgba(0,0,0,.08),0 1px 4px rgba(0,0,0,.04);
+      --shadow-lg:0 12px 40px rgba(0,0,0,.1),0 4px 12px rgba(0,0,0,.05);
+      --nav-bg:rgba(255,255,255,.85);--btn-text:#FFFFFF;
+    }
+    [data-theme="dark"] {
+      --bg:#0C0C0F;--bg2:#111114;--surface:#17171B;--surface-2:#1E1E23;--surface-3:#26262C;
+      --border:#2A2A32;--border-2:#36363F;--text:#F0F0F5;--text-2:#A0A0B0;--text-3:#60606E;--text-4:#3A3A45;
+      --accent:#60A5FA;--accent-h:#93C5FD;--accent-s:#172554;--accent-t:rgba(96,165,250,.12);--accent-glow:rgba(96,165,250,.2);
+      --success:#4ADE80;--success-s:rgba(74,222,128,.1);--error:#F87171;--error-s:rgba(248,113,113,.1);
+      --shadow-sm:0 1px 3px rgba(0,0,0,.3);--shadow:0 4px 16px rgba(0,0,0,.4);--shadow-lg:0 12px 40px rgba(0,0,0,.5);
+      --nav-bg:rgba(12,12,15,.88);--btn-text:#FFFFFF;
+    }
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+    html{scroll-behavior:smooth;}
+    body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:100vh;line-height:1.6;-webkit-font-smoothing:antialiased;transition:background var(--t),color var(--t);}
+    ::-webkit-scrollbar{width:4px;height:4px;}
+    ::-webkit-scrollbar-track{background:transparent;}
+    ::-webkit-scrollbar-thumb{background:var(--border-2);border-radius:4px;}
+
+    /* Nav */
+    .nav{position:sticky;top:0;z-index:200;background:var(--nav-bg);backdrop-filter:blur(16px) saturate(180%);-webkit-backdrop-filter:blur(16px) saturate(180%);border-bottom:1px solid var(--border);height:52px;display:flex;align-items:center;padding:0 24px;transition:background var(--t),border-color var(--t);}
+    .nav-inner{max-width:900px;margin:0 auto;width:100%;display:flex;align-items:center;justify-content:space-between;}
+    .nav-logo{display:flex;align-items:center;gap:8px;text-decoration:none;user-select:none;}
+    .nav-logo img{width:22px;height:22px;object-fit:contain;border-radius:5px;opacity:.9;}
+    .nav-logo-text{font-size:14px;font-weight:600;letter-spacing:-.01em;color:var(--text);}
+    .nav-logo-text em{color:var(--accent);font-style:normal;}
+    .nav-actions{display:flex;align-items:center;gap:6px;}
+    .nav-pill{height:30px;padding:0 11px;background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);border-radius:8px;font-size:12px;font-weight:500;font-family:var(--font);cursor:pointer;display:flex;align-items:center;gap:5px;transition:all var(--t);white-space:nowrap;text-decoration:none;}
+    .nav-pill:hover{background:var(--surface-3);color:var(--text);border-color:var(--border-2);}
+    .nav-pill svg{width:13px;height:13px;flex-shrink:0;}
+
+    /* Page */
+    .page{max-width:900px;margin:0 auto;padding:36px 24px 96px;}
+
+    /* Header */
+    .page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:28px;flex-wrap:wrap;gap:12px;}
+    .page-title{font-size:22px;font-weight:700;letter-spacing:-.02em;}
+    .page-sub{font-size:13px;color:var(--text-3);margin-top:3px;}
+
+    /* Search */
+    .search-wrap{position:relative;max-width:300px;flex:1;}
+    .search-icon{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--text-4);font-size:11px;pointer-events:none;}
+    .search-input{width:100%;height:36px;background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:0 12px 0 32px;font-size:13px;font-family:var(--font);color:var(--text);outline:none;transition:border-color var(--t),box-shadow var(--t);}
+    .search-input::placeholder{color:var(--text-4);}
+    .search-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-glow);}
+
+    /* Login prompt */
+    .login-prompt{display:none;flex-direction:column;align-items:center;justify-content:center;padding:80px 24px;text-align:center;gap:14px;}
+    .login-prompt.show{display:flex;}
+    .lp-icon{font-size:40px;margin-bottom:4px;}
+    .lp-title{font-size:17px;font-weight:600;}
+    .lp-sub{font-size:13px;color:var(--text-3);}
+    .btn-primary{height:40px;padding:0 20px;background:var(--accent);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:600;font-family:var(--font);cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:background var(--t),box-shadow var(--t);}
+    .btn-primary:hover{background:var(--accent-h);}
+
+    /* History grid */
+    .history-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;}
+
+    /* History card */
+    .h-card{background:var(--surface);border:1px solid var(--border);border-radius:13px;padding:16px 18px;cursor:pointer;transition:border-color var(--t),box-shadow var(--t),background var(--t);position:relative;}
+    .h-card:hover{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-glow);}
+    .h-card-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:8px;}
+    .h-card-title{font-size:13.5px;font-weight:600;color:var(--text);line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;flex:1;}
+    .h-card-del{flex-shrink:0;background:none;border:none;cursor:pointer;color:var(--text-4);font-size:11px;padding:3px;border-radius:5px;transition:color var(--t),background var(--t);line-height:1;}
+    .h-card-del:hover{color:var(--error);background:var(--error-s);}
+    .h-card-meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:10px;}
+    .h-badge{display:inline-flex;align-items:center;gap:3px;background:var(--surface-2);border:1px solid var(--border);border-radius:5px;padding:1px 7px;font-size:10.5px;color:var(--text-3);}
+    .h-badge.accent{color:var(--accent);border-color:var(--accent-t);background:var(--accent-s);}
+    .h-preview{font-size:12px;color:var(--text-3);line-height:1.6;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;}
+
+    /* Empty state */
+    .empty-state{display:none;flex-direction:column;align-items:center;justify-content:center;padding:80px 24px;text-align:center;gap:12px;}
+    .empty-state.show{display:flex;}
+    .es-icon{width:52px;height:52px;border-radius:14px;background:var(--surface-2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:22px;}
+    .es-title{font-size:15px;font-weight:600;}
+    .es-sub{font-size:13px;color:var(--text-3);}
+
+    /* Modal overlay */
+    .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);backdrop-filter:blur(4px);z-index:1000;align-items:flex-start;justify-content:center;padding:24px 16px;overflow-y:auto;}
+    .modal-overlay.show{display:flex;}
+    .modal{background:var(--surface);border:1px solid var(--border);border-radius:16px;width:100%;max-width:800px;margin:auto;box-shadow:var(--shadow-lg);overflow:hidden;}
+    .modal-header{display:flex;align-items:flex-start;justify-content:space-between;padding:20px 20px 0;gap:12px;}
+    .modal-title{font-size:15px;font-weight:600;line-height:1.45;flex:1;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;}
+    .modal-close{flex-shrink:0;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;width:30px;height:30px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text-3);transition:all var(--t);}
+    .modal-close:hover{border-color:var(--border-2);color:var(--text);}
+    .modal-meta{padding:10px 20px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;border-bottom:1px solid var(--border);}
+
+    /* Tab bar */
+    .tab-bar{display:flex;border-bottom:1px solid var(--border);padding:0 20px;}
+    .tab-btn{background:none;border:none;border-bottom:2px solid transparent;color:var(--text-3);font-size:13px;font-weight:500;font-family:var(--font);padding:10px 13px;cursor:pointer;margin-bottom:-1px;display:flex;align-items:center;gap:5px;transition:color var(--t),border-color var(--t);white-space:nowrap;}
+    .tab-btn:hover{color:var(--text-2);}
+    .tab-btn.active{color:var(--accent);border-bottom-color:var(--accent);}
+    .tab-btn i{font-size:10px;}
+    .tab-pane{display:none;}
+    .tab-pane.active{display:block;}
+
+    /* Pane */
+    .pane-bar{display:flex;align-items:center;justify-content:space-between;padding:8px 20px;border-bottom:1px solid var(--border);}
+    .pane-stat{font-size:11px;color:var(--text-4);}
+    .pane-actions{display:flex;gap:5px;}
+    .act-btn{height:27px;padding:0 9px;background:var(--surface-2);border:1px solid var(--border);color:var(--text-3);border-radius:7px;font-size:11px;font-weight:500;font-family:var(--font);cursor:pointer;display:flex;align-items:center;gap:4px;transition:all var(--t);}
+    .act-btn:hover{border-color:var(--accent);color:var(--accent);}
+    .act-btn.copied{color:var(--success);border-color:rgba(22,163,74,.3);background:var(--success-s);}
+    .pane-body{padding:18px 22px 24px;max-height:55vh;overflow-y:auto;}
+
+    .md-body{font-size:14px;line-height:1.85;color:var(--text);}
+    .md-body h1{font-size:1.2rem;font-weight:700;margin:0 0 14px;}
+    .md-body h2{font-size:1.05rem;font-weight:700;margin:22px 0 8px;}
+    .md-body p{margin-bottom:13px;}
+    .md-body p:last-child{margin-bottom:0;}
+    .md-body strong{color:var(--text);font-weight:600;}
+    .md-body ul,.md-body ol{padding-left:20px;margin-bottom:13px;}
+    .md-body li{margin-bottom:5px;}
+    .md-body a{color:var(--accent);text-decoration:none;}
+    .md-body blockquote{border-left:3px solid var(--accent);padding-left:14px;color:var(--text-2);margin:12px 0;}
+    .raw-body{font-size:13px;line-height:1.9;color:var(--text-2);white-space:pre-wrap;font-family:var(--font);}
+
+    /* Loading */
+    .loading{display:none;flex-direction:column;align-items:center;justify-content:center;padding:60px 24px;gap:12px;}
+    .loading.show{display:flex;}
+    .spin{display:inline-block;width:20px;height:20px;border:2px solid var(--border-2);border-top-color:var(--accent);border-radius:50%;animation:sp .7s linear infinite;}
+    @keyframes sp{to{transform:rotate(360deg);}}
+
+    @media(max-width:600px){
+      .nav{padding:0 16px;}
+      .page{padding:24px 16px 72px;}
+      .page-header{flex-direction:column;align-items:flex-start;}
+      .search-wrap{max-width:100%;width:100%;}
+      .history-grid{grid-template-columns:1fr;}
+    }
+  </style>
+</head>
+<body>
+
+<!-- Nav -->
+<header class="nav">
+  <div class="nav-inner">
+    <a class="nav-logo" href="/">
+      <img src="/static/sipsip.png" alt="">
+      <span class="nav-logo-text">sipsip<em>.ai</em></span>
+    </a>
+    <div class="nav-actions">
+      <a class="nav-pill" href="/">
+        <i class="fas fa-arrow-left" style="font-size:10px;"></i>
+        返回首页
+      </a>
+      <button class="nav-pill" id="authBtn">
+        <i class="fas fa-user" style="font-size:10px;"></i>
+        <span id="authBtnText">登录</span>
+      </button>
+      <button class="nav-pill" id="themeToggle" title="切换主题">
+        <svg id="themeIcon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path id="icon-moon" d="M13 9.5a5.5 5.5 0 1 1-7-7 4.5 4.5 0 0 0 7 7z"/>
+          <path id="icon-sun" style="display:none" d="M8 1v1M8 14v1M1 8H2M14 8h1M3.05 3.05l.71.71M12.24 12.24l.71.71M3.05 12.95l.71-.71M12.24 3.76l.71-.71M11 8a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<main class="page">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">历史记录</h1>
+      <p class="page-sub" id="historyCount">—</p>
+    </div>
+    <div class="search-wrap">
+      <i class="fas fa-magnifying-glass search-icon"></i>
+      <input type="text" class="search-input" id="searchInput" placeholder="搜索标题或内容…">
+    </div>
+  </div>
+
+  <!-- Loading -->
+  <div class="loading" id="loadingState">
+    <div class="spin"></div>
+    <span style="font-size:13px;color:var(--text-3);">加载中…</span>
+  </div>
+
+  <!-- Login prompt -->
+  <div class="login-prompt" id="loginPrompt">
+    <div class="lp-icon">🔐</div>
+    <div class="lp-title">登录后查看历史记录</div>
+    <div class="lp-sub">注册账号，让你的转录历史永久保存在云端</div>
+    <a href="/" class="btn-primary">
+      <i class="fas fa-arrow-right"></i>
+      前往登录
+    </a>
+  </div>
+
+  <!-- Empty state -->
+  <div class="empty-state" id="emptyState">
+    <div class="es-icon">📂</div>
+    <span class="es-title">还没有历史记录</span>
+    <span class="es-sub">转录完成的视频会自动保存到这里</span>
+  </div>
+
+  <!-- History grid -->
+  <div class="history-grid" id="historyGrid"></div>
+</main>
+
+<!-- Detail Modal -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modalTitle"></div>
+      <button class="modal-close" id="modalClose"><i class="fas fa-xmark"></i></button>
+    </div>
+    <div class="modal-meta" id="modalMeta"></div>
+    <div class="tab-bar">
+      <button class="tab-btn active" data-tab="raw">
+        <i class="fas fa-scroll"></i> 原文字稿
+      </button>
+      <button class="tab-btn" data-tab="script">
+        <i class="fas fa-align-left"></i> 转录文本
+      </button>
+      <button class="tab-btn" data-tab="summary">
+        <i class="fas fa-wand-magic-sparkles"></i> AI 摘要
+      </button>
+      <button class="tab-btn" data-tab="translation" id="transTabBtn" style="display:none;">
+        <i class="fas fa-language"></i> 翻译
+      </button>
+    </div>
+
+    <!-- Raw -->
+    <div class="tab-pane active" id="rawTab">
+      <div class="pane-bar">
+        <span class="pane-stat" id="rawStat"></span>
+        <div class="pane-actions">
+          <button class="act-btn" id="copyRaw"><i class="fas fa-copy"></i> 复制</button>
+        </div>
+      </div>
+      <div class="pane-body"><pre class="raw-body" id="rawContent"></pre></div>
+    </div>
+
+    <!-- Script -->
+    <div class="tab-pane" id="scriptTab">
+      <div class="pane-bar">
+        <span class="pane-stat" id="scriptStat"></span>
+        <div class="pane-actions">
+          <button class="act-btn" id="copyScript"><i class="fas fa-copy"></i> 复制</button>
+        </div>
+      </div>
+      <div class="pane-body"><div class="md-body" id="scriptContent"></div></div>
+    </div>
+
+    <!-- Summary -->
+    <div class="tab-pane" id="summaryTab">
+      <div class="pane-bar">
+        <span class="pane-stat" id="summaryStat"></span>
+        <div class="pane-actions">
+          <button class="act-btn" id="copySummary"><i class="fas fa-copy"></i> 复制</button>
+        </div>
+      </div>
+      <div class="pane-body"><div class="md-body" id="summaryContent"></div></div>
+    </div>
+
+    <!-- Translation -->
+    <div class="tab-pane" id="translationTab">
+      <div class="pane-bar">
+        <span class="pane-stat" id="transStat"></span>
+        <div class="pane-actions">
+          <button class="act-btn" id="copyTrans"><i class="fas fa-copy"></i> 复制</button>
+        </div>
+      </div>
+      <div class="pane-body"><div class="md-body" id="transContent"></div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ── Theme ───────────────────────────────────────── */
+(function () {
+  const root = document.documentElement;
+  const stored = localStorage.getItem('vt2_theme');
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const theme = stored || (prefersDark ? 'dark' : 'light');
+
+  function applyTheme(t) {
+    root.setAttribute('data-theme', t);
+    localStorage.setItem('vt2_theme', t);
+    const moonEl = document.getElementById('icon-moon');
+    const sunEl  = document.getElementById('icon-sun');
+    if (t === 'dark') { if(moonEl) moonEl.style.display='none'; if(sunEl) sunEl.style.display=''; }
+    else              { if(moonEl) moonEl.style.display='';     if(sunEl) sunEl.style.display='none'; }
+  }
+  applyTheme(theme);
+  document.addEventListener('DOMContentLoaded', function () {
+    applyTheme(theme);
+    document.getElementById('themeToggle').addEventListener('click', function () {
+      applyTheme(root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+    });
+  });
+})();
+
+/* ── History Page App ────────────────────────────── */
+class HistoryPage {
+  constructor() {
+    this.items    = [];
+    this.filtered = [];
+    this.token    = localStorage.getItem('vt2_token') || '';
+    this.username = localStorage.getItem('vt2_username') || '';
+    this._init();
+  }
+
+  $ (id) { return document.getElementById(id); }
+
+  _init() {
+    this._updateAuthBtn();
+    this._bindModal();
+    this._bindSearch();
+    this._bindCopy();
+    if (this.token) {
+      this._loadFromServer();
+    } else {
+      this._loadFromLocalStorage();
+    }
+  }
+
+  _loadFromLocalStorage() {
+    try {
+      const stored = JSON.parse(localStorage.getItem('vt2_history') || '[]');
+      this.items = stored.map((item, idx) => ({
+        id: 'local_' + idx,
+        task_id: item.taskId || '',
+        title: item.title || '',
+        url: item.url || '',
+        raw_script: item.raw_script || '',
+        script: item.script || '',
+        summary: item.summary || '',
+        translation: item.translation || '',
+        detected_language: item.detected_language || '',
+        summary_language: item.summary_language || '',
+        date: item.date || '',
+        _local: true,
+        _localIdx: idx,
+      }));
+      this.filtered = [...this.items];
+      const p = this.$('loginPrompt');
+      if (this.items.length > 0) {
+        p.style.cssText = 'display:flex;padding:16px 20px;margin-bottom:16px;background:var(--accent-s);border:1px solid var(--accent-t);border-radius:12px;gap:12px;align-items:center;';
+        p.innerHTML = '<i class="fas fa-info-circle" style="color:var(--accent);font-size:16px;flex-shrink:0;"></i><div style="flex:1"><div style="font-size:13px;font-weight:600;">本地记录（未同步）</div><div style="font-size:12px;color:var(--text-3);margin-top:2px;">登录后可将记录永久保存到云端</div></div><a href="/" style="font-size:12px;color:var(--accent);font-weight:600;text-decoration:none;flex-shrink:0;white-space:nowrap;">去登录 →</a>';
+      } else {
+        p.classList.add('show');
+      }
+    } catch (_) { this.$('loginPrompt').classList.add('show'); }
+    this._render();
+  }
+
+  _updateAuthBtn() {
+    const btn  = this.$('authBtn');
+    const text = this.$('authBtnText');
+    if (this.token && this.username) {
+      text.textContent = this.username + ' · 退出';
+      btn.onclick = () => {
+        if (confirm('确定退出登录？')) {
+          localStorage.removeItem('vt2_token');
+          localStorage.removeItem('vt2_username');
+          location.reload();
+        }
+      };
+    } else {
+      text.textContent = '登录';
+      btn.onclick = () => { window.location.href = '/'; };
+    }
+  }
+
+  async _loadFromServer() {
+    const loading = this.$('loadingState');
+    loading.classList.add('show');
+    try {
+      const r = await fetch('/api/history', {
+        headers: { 'Authorization': 'Bearer ' + this.token }
+      });
+      if (r.status === 401) {
+        localStorage.removeItem('vt2_token');
+        localStorage.removeItem('vt2_username');
+        this.$('loginPrompt').classList.add('show');
+        loading.classList.remove('show');
+        return;
+      }
+      const data = await r.json();
+      this.items = data.items || [];
+      this.filtered = [...this.items];
+      this._render();
+    } catch (e) {
+      this.$('emptyState').classList.add('show');
+    } finally {
+      loading.classList.remove('show');
+    }
+  }
+
+  _render() {
+    const grid = this.$('historyGrid');
+    const count = this.$('historyCount');
+
+    if (!this.filtered.length) {
+      grid.innerHTML = '';
+      this.$('emptyState').classList.add('show');
+      count.textContent = '暂无记录';
+      return;
+    }
+
+    this.$('emptyState').classList.remove('show');
+    count.textContent = `共 ${this.items.length} 条记录${this.filtered.length !== this.items.length ? '，当前筛选 ' + this.filtered.length + ' 条' : ''}`;
+
+    const langNames = { zh:'中文', en:'English', ja:'日本語', ko:'한국어', es:'Español', fr:'Français', de:'Deutsch' };
+
+    grid.innerHTML = this.filtered.map((item, i) => {
+      const date = item.date ? new Date(item.date).toLocaleDateString('zh-CN', { year:'numeric', month:'short', day:'numeric' }) : '';
+      const lang = langNames[item.detected_language] || item.detected_language || '';
+      const preview = this._getPreview(item);
+      return `
+        <div class="h-card" data-idx="${i}">
+          <div class="h-card-top">
+            <div class="h-card-title">${this._esc(item.title || '无标题')}</div>
+            <button class="h-card-del" data-id="${item.id}" title="删除" onclick="event.stopPropagation(); historyPage._delete('${item.id}', this)">
+              <i class="fas fa-xmark"></i>
+            </button>
+          </div>
+          <div class="h-card-meta">
+            ${date ? `<span class="h-badge"><i class="fas fa-calendar" style="font-size:9px;"></i> ${date}</span>` : ''}
+            ${lang ? `<span class="h-badge accent"><i class="fas fa-language" style="font-size:9px;"></i> ${lang}</span>` : ''}
+          </div>
+          ${preview ? `<div class="h-preview">${this._esc(preview)}</div>` : ''}
+        </div>
+      `;
+    }).join('');
+
+    grid.querySelectorAll('.h-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const item = this.filtered[+card.dataset.idx];
+        if (item) this._openModal(item);
+      });
+    });
+  }
+
+  _getPreview(item) {
+    // Try summary → script → raw (first 150 chars, strip markdown)
+    const src = item.summary || item.script || item.raw_script || '';
+    const clean = src.replace(/#{1,6}\s+/g, '').replace(/\*\*/g, '').replace(/\n+/g, ' ').trim();
+    return clean.slice(0, 150) + (clean.length > 150 ? '…' : '');
+  }
+
+  async _delete(historyId, btnEl) {
+    if (!confirm('删除这条记录？')) return;
+    const item = this.items.find(x => String(x.id) === String(historyId));
+    if (item && item._local) {
+      try {
+        let stored = JSON.parse(localStorage.getItem('vt2_history') || '[]');
+        stored.splice(item._localIdx, 1);
+        localStorage.setItem('vt2_history', JSON.stringify(stored));
+      } catch (_) {}
+      this.items    = this.items.filter(x => String(x.id) !== String(historyId));
+      this.filtered = this.filtered.filter(x => String(x.id) !== String(historyId));
+      this._render();
+      return;
+    }
+    try {
+      const r = await fetch(`/api/history/${historyId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': 'Bearer ' + this.token }
+      });
+      if (r.ok) {
+        this.items    = this.items.filter(x => String(x.id) !== String(historyId));
+        this.filtered = this.filtered.filter(x => String(x.id) !== String(historyId));
+        this._render();
+      }
+    } catch (_) {}
+  }
+
+  _openModal(item) {
+    const langNames = { zh:'中文', en:'English', ja:'日本語', ko:'한국어', es:'Español', fr:'Français', de:'Deutsch' };
+
+    this.$('modalTitle').textContent = item.title || '无标题';
+
+    // Meta
+    const meta = this.$('modalMeta');
+    meta.innerHTML = '';
+    if (item.detected_language) {
+      meta.innerHTML += `<span class="h-badge accent"><i class="fas fa-language" style="font-size:9px;"></i> ${langNames[item.detected_language] || item.detected_language}</span>`;
+    }
+    if (item.date) {
+      const d = new Date(item.date).toLocaleString('zh-CN');
+      meta.innerHTML += `<span class="h-badge"><i class="fas fa-clock" style="font-size:9px;"></i> ${d}</span>`;
+    }
+    if (item.url) {
+      meta.innerHTML += `<a class="h-badge" href="${this._esc(item.url)}" target="_blank" style="color:var(--accent);text-decoration:none;" onclick="event.stopPropagation()"><i class="fas fa-link" style="font-size:9px;"></i> 原视频</a>`;
+    }
+
+    // Content
+    const raw = item.raw_script || '';
+    const script = item.script || '';
+    const summary = item.summary || '';
+    const trans = item.translation || '';
+
+    this.$('rawContent').textContent = raw || '（无原文字稿）';
+    this.$('rawStat').textContent = raw ? raw.length.toLocaleString() + ' 字' : '';
+
+    this.$('scriptContent').innerHTML = script ? marked.parse(script) : '<p style="color:var(--text-3)">（无转录文本）</p>';
+    this.$('scriptStat').textContent = script ? script.length.toLocaleString() + ' 字' : '';
+
+    this.$('summaryContent').innerHTML = summary ? marked.parse(summary) : '<p style="color:var(--text-3)">（无摘要）</p>';
+    this.$('summaryStat').textContent = summary ? summary.length.toLocaleString() + ' 字' : '';
+
+    const showTrans = trans && item.detected_language && item.summary_language
+      && item.detected_language !== item.summary_language;
+    if (showTrans) {
+      this.$('transContent').innerHTML = marked.parse(trans);
+      this.$('transStat').textContent = trans.length.toLocaleString() + ' 字';
+      this.$('transTabBtn').style.display = 'inline-flex';
+    } else {
+      this.$('transTabBtn').style.display = 'none';
+    }
+
+    this._switchTab('raw');
+    this.$('modalOverlay').classList.add('show');
+    document.body.style.overflow = 'hidden';
+  }
+
+  _closeModal() {
+    this.$('modalOverlay').classList.remove('show');
+    document.body.style.overflow = '';
+  }
+
+  _switchTab(name) {
+    document.querySelectorAll('.tab-btn').forEach(b =>
+      b.classList.toggle('active', b.dataset.tab === name));
+    document.querySelectorAll('.tab-pane').forEach(p =>
+      p.classList.toggle('active', p.id === name + 'Tab'));
+  }
+
+  _bindModal() {
+    this.$('modalClose').addEventListener('click', () => this._closeModal());
+    this.$('modalOverlay').addEventListener('click', (e) => {
+      if (e.target === this.$('modalOverlay')) this._closeModal();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') this._closeModal();
+    });
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => this._switchTab(btn.dataset.tab));
+    });
+  }
+
+  _bindSearch() {
+    let t;
+    this.$('searchInput').addEventListener('input', (e) => {
+      clearTimeout(t);
+      t = setTimeout(() => {
+        const q = e.target.value.trim().toLowerCase();
+        if (!q) { this.filtered = [...this.items]; }
+        else {
+          this.filtered = this.items.filter(x =>
+            (x.title || '').toLowerCase().includes(q) ||
+            (x.summary || '').toLowerCase().includes(q) ||
+            (x.raw_script || '').toLowerCase().includes(q)
+          );
+        }
+        this._render();
+      }, 250);
+    });
+  }
+
+  _bindCopy() {
+    const pairs = [
+      ['copyRaw',    () => this.$('rawContent').textContent],
+      ['copyScript', () => this.$('scriptContent').innerText],
+      ['copySummary',() => this.$('summaryContent').innerText],
+      ['copyTrans',  () => this.$('transContent').innerText],
+    ];
+    pairs.forEach(([id, getText]) => {
+      this.$(id).addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
+        try {
+          await navigator.clipboard.writeText(getText());
+          const orig = btn.innerHTML;
+          btn.innerHTML = '<i class="fas fa-check"></i> 已复制';
+          btn.classList.add('copied');
+          setTimeout(() => { btn.innerHTML = orig; btn.classList.remove('copied'); }, 2000);
+        } catch (_) {}
+      });
+    });
+  }
+
+  _esc(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  window.historyPage = new HistoryPage();
+});
+</script>
+</body>
+</html>

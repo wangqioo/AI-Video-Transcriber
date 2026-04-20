@@ -331,6 +331,74 @@
     .fetch-status.ok { color: var(--success); }
     .fetch-status.err { color: var(--error); }
 
+    /* ── Auth modal ───────────────────────────────────── */
+    .modal-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,.5); backdrop-filter: blur(4px);
+      z-index: 1000; align-items: center; justify-content: center; padding: 24px;
+    }
+    .modal-overlay.show { display: flex; }
+    .auth-modal {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 16px; width: 100%; max-width: 380px;
+      box-shadow: var(--shadow-lg); overflow: hidden;
+    }
+    .auth-modal-header {
+      padding: 20px 20px 0;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .auth-modal-title { font-size: 16px; font-weight: 700; }
+    .auth-modal-close {
+      background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: 7px; width: 28px; height: 28px;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; color: var(--text-3); transition: all var(--t);
+    }
+    .auth-modal-close:hover { border-color: var(--border-2); color: var(--text); }
+
+    .auth-tabs {
+      display: flex; gap: 0; padding: 14px 20px 0;
+    }
+    .auth-tab-btn {
+      background: none; border: none; border-bottom: 2px solid transparent;
+      color: var(--text-3); font-size: 13px; font-weight: 500; font-family: var(--font);
+      padding: 6px 14px; cursor: pointer; margin-bottom: -1px;
+      transition: color var(--t), border-color var(--t);
+    }
+    .auth-tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    .auth-form-wrap {
+      padding: 18px 20px 20px; border-top: 1px solid var(--border);
+    }
+    .auth-field { margin-bottom: 12px; }
+    .auth-label {
+      display: block; font-size: 11px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: .06em;
+      color: var(--text-3); margin-bottom: 5px;
+    }
+    .auth-input {
+      width: 100%; height: 38px; padding: 0 12px;
+      background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: 9px; color: var(--text); font-size: 13.5px;
+      font-family: var(--font); outline: none;
+      transition: border-color var(--t), box-shadow var(--t);
+    }
+    .auth-input::placeholder { color: var(--text-4); }
+    .auth-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+    .auth-submit {
+      width: 100%; height: 40px;
+      background: var(--accent); color: #fff; border: none;
+      border-radius: 10px; font-size: 14px; font-weight: 600; font-family: var(--font);
+      cursor: pointer; margin-top: 6px; transition: background var(--t);
+    }
+    .auth-submit:hover { background: var(--accent-h); }
+    .auth-submit:disabled { opacity: .5; cursor: not-allowed; }
+    .auth-err {
+      font-size: 12px; color: var(--error); margin-top: 8px;
+      min-height: 16px; display: none;
+    }
+    .auth-err.show { display: block; }
+
     /* ── History ──────────────────────────────────────── */
     .history-section { margin-bottom: 10px; }
     .history-hd {
@@ -347,29 +415,27 @@
       font-size: 11px; color: var(--text-4); font-family: var(--font);
       padding: 2px 0; transition: color var(--t);
     }
-    .btn-text-xs:hover { color: var(--error); }
+    .btn-text-xs:hover { color: var(--accent); }
+    .btn-text-xs.danger:hover { color: var(--error); }
 
-    .history-list {
-      display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px;
-    }
-    .history-list::-webkit-scrollbar { height: 3px; }
+    .history-list { display: flex; flex-direction: column; gap: 6px; }
     .history-card {
-      flex-shrink: 0; background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 10px; padding: 10px 13px;
-      cursor: pointer; max-width: 200px; min-width: 150px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 11px 14px;
+      cursor: pointer; display: flex; align-items: center; gap: 12px;
       transition: border-color var(--t), background var(--t), box-shadow var(--t);
     }
     .history-card:hover {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px var(--accent-glow);
+      border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow);
     }
+    .hc-body { flex: 1; min-width: 0; }
     .hc-title {
-      font-size: 12.5px; font-weight: 500; color: var(--text);
+      font-size: 13px; font-weight: 500; color: var(--text);
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-      margin-bottom: 3px;
+      margin-bottom: 2px;
     }
-    .hc-date { font-size: 11px; color: var(--text-3); }
+    .hc-meta { font-size: 11px; color: var(--text-3); }
+    .hc-arrow { color: var(--text-4); font-size: 10px; flex-shrink: 0; }
 
     /* ── Result panel ─────────────────────────────────── */
     .result-panel { margin-top: 10px; }
@@ -621,10 +687,19 @@
       <span class="nav-logo-text">sipsip<em>.ai</em></span>
     </a>
     <div class="nav-actions">
+      <!-- History link -->
+      <a class="nav-pill" href="/history" id="historyNavLink">
+        <i class="fas fa-clock-rotate-left" style="font-size:10px;"></i>
+        <span>历史</span>
+      </a>
+      <!-- Auth button -->
+      <button class="nav-pill" id="authNavBtn">
+        <i class="fas fa-user" style="font-size:10px;"></i>
+        <span id="authNavText">登录</span>
+      </button>
       <!-- Theme toggle -->
       <button class="nav-pill" id="themeToggle" title="切换主题" aria-label="切换主题">
         <svg id="themeIcon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <!-- moon icon default (light mode shows moon = switch to dark) -->
           <path id="icon-moon" d="M13 9.5a5.5 5.5 0 1 1-7-7 4.5 4.5 0 0 0 7 7z"/>
           <path id="icon-sun" style="display:none" d="M8 1v1M8 14v1M1 8H2M14 8h1M3.05 3.05l.71.71M12.24 12.24l.71.71M3.05 12.95l.71-.71M12.24 3.76l.71-.71M11 8a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/>
         </svg>
@@ -662,7 +737,7 @@
       <div class="url-row">
         <div class="url-wrap">
           <i class="fas fa-link url-icon"></i>
-          <input id="videoUrl" type="url" class="url-input"
+          <input id="videoUrl" type="text" class="url-input"
             placeholder="粘贴视频链接，或包含链接的任意文字…"
             data-i18n-ph="ph_url" required>
         </div>
@@ -725,14 +800,17 @@
     </div>
   </div>
 
-  <!-- History -->
+  <!-- History (recent 3) -->
   <div class="history-section" id="historySection" style="display:none;">
     <div class="history-hd">
       <span class="history-label">
         <i class="fas fa-clock-rotate-left" style="font-size:9px;"></i>
-        <span data-i18n="lbl_history">历史记录</span>
+        <span data-i18n="lbl_history">最近记录</span>
       </span>
-      <button class="btn-text-xs" id="clearHistory" data-i18n="btn_clear">清空</button>
+      <div style="display:flex;gap:10px;">
+        <a href="/history" style="font-size:11px;color:var(--accent);text-decoration:none;font-weight:500;">查看全部 →</a>
+        <button class="btn-text-xs danger" id="clearHistory" data-i18n="btn_clear">清空</button>
+      </div>
     </div>
     <div class="history-list" id="historyList"></div>
   </div>
@@ -898,6 +976,32 @@
     });
   })();
 </script>
-<script src="/static/app.js?v=20260331"></script>
+<!-- Auth Modal -->
+<div class="modal-overlay" id="authModal">
+  <div class="auth-modal">
+    <div class="auth-modal-header">
+      <span class="auth-modal-title" id="authModalTitle">登录</span>
+      <button class="auth-modal-close" id="authModalClose"><i class="fas fa-xmark"></i></button>
+    </div>
+    <div class="auth-tabs">
+      <button class="auth-tab-btn active" data-auth-tab="login">登录</button>
+      <button class="auth-tab-btn" data-auth-tab="register">注册</button>
+    </div>
+    <div class="auth-form-wrap">
+      <div class="auth-field">
+        <label class="auth-label">用户名</label>
+        <input type="text" class="auth-input" id="authUsername" placeholder="输入用户名" autocomplete="username">
+      </div>
+      <div class="auth-field">
+        <label class="auth-label">密码</label>
+        <input type="password" class="auth-input" id="authPassword" placeholder="输入密码（6位以上）" autocomplete="current-password">
+      </div>
+      <div class="auth-err" id="authErr"></div>
+      <button class="auth-submit" id="authSubmit">登录</button>
+    </div>
+  </div>
+</div>
+
+<script src="/static/app.js?v=20260402"></script>
 </body>
 </html>

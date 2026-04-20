@@ -19,6 +19,15 @@ from transcriber import Transcriber
 from summarizer import Summarizer
 from translator import Translator
 
+from database import Base, engine, SessionLocal
+from models import User, History as HistoryModel
+import auth as auth_module
+from sqlalchemy.orm import Session
+
+# Create database tables
+Base.metadata.create_all(bind=engine)
+
+
 # 配置日志
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -50,6 +59,15 @@ transcriber = Transcriber()
 summarizer = Summarizer()
 translator = Translator()
 
+
+def _get_user_from_request(authorization: str = None) -> Optional[dict]:
+    """Extract user info from Authorization: Bearer <token> header."""
+    if not authorization or not authorization.startswith('Bearer '):
+        return None
+    return auth_module.decode_token(authorization[7:])
+
+
+
 # 存储任务状态 - 使用文件持久化
 import json
 import threading
@@ -68,16 +86,52 @@ def load_tasks():
     return {}
 
 def save_tasks(tasks_data):
-    """保存任务状态"""
+    """保存任务状态，清理 48h 前已完成/出错的旧任务（最多保留 200 条）"""
+    import time as _time
     try:
+        cutoff = _time.time() - 48 * 3600
+        pruned = {}
+        for tid, task in tasks_data.items():
+            status = task.get("status", "")
+            ts = task.get("created_at", cutoff + 1)
+            if status in ("processing", "queued") or ts >= cutoff:
+                pruned[tid] = task
+        if len(pruned) > 200:
+            keep = sorted(pruned, key=lambda t: pruned[t].get("created_at", 0), reverse=True)[:200]
+            pruned = {k: pruned[k] for k in keep}
         with tasks_lock:
-            with open(TASKS_FILE, 'w', encoding='utf-8') as f:
-                json.dump(tasks_data, f, ensure_ascii=False, indent=2)
+            with open(TASKS_FILE, "w", encoding="utf-8") as f:
+                json.dump(pruned, f, ensure_ascii=False, indent=2)
     except Exception as e:
         logger.error(f"保存任务状态失败: {e}")
 
+async def _simulate_progress(task_id: str, start: float, end: float, interval: float = 10.0):
+    """Slowly advance progress from start toward end while a long operation runs.
+    Uses exponential decay: each tick closes 4% of the remaining gap, so it
+    decelerates and never actually reaches `end`.  Cancel this task when the
+    real operation finishes."""
+    current = float(start)
+    while True:
+        await asyncio.sleep(interval)
+        if task_id not in tasks or tasks[task_id].get("status") != "processing":
+            break
+        # only advance if nobody else has already pushed the value higher
+        server_val = float(tasks[task_id].get("progress", current))
+        current = max(current, server_val)
+        if current >= end - 0.5:
+            break
+        remaining = end - current
+        inc = max(remaining * 0.05, 0.2)   # 5% of gap, minimum 0.2
+        current = min(current + inc, end - 0.5)
+        tasks[task_id]["progress"] = round(current, 1)
+        save_tasks(tasks)
+        await broadcast_task_update(task_id, tasks[task_id])
+
+
 async def broadcast_task_update(task_id: str, task_data: dict):
     """向所有连接的SSE客户端广播任务状态更新"""
+    # 始终在 payload 中包含 task_id，方便前端多任务场景区分
+    task_data = {**task_data, "task_id": task_id}
     logger.info(f"广播任务更新: {task_id}, 状态: {task_data.get('status')}, 连接数: {len(sse_connections.get(task_id, []))}")
     if task_id in sse_connections:
         connections_to_remove = []
@@ -105,6 +159,44 @@ processing_urls = set()
 active_tasks = {}
 # 存储SSE连接，用于实时推送状态更新
 sse_connections = {}
+
+# ── 任务队列 ───────────────────────────────────────────────────────────────────
+_task_queue: asyncio.Queue = None        # 全局任务队列（启动时初始化）
+_queue_list: list = []                   # 等待中的 task_id 列表（有序）
+_task_params: dict = {}                  # task_id -> (url, summary_language, api_key, model_base_url, model_id)
+
+
+async def _queue_worker():
+    """单线程 worker：依次处理队列中的视频任务。"""
+    logger.info("任务队列 worker 已启动")
+    while True:
+        task_id = await _task_queue.get()
+        # 从等待列表中移除，并更新剩余任务的队列位置
+        if task_id in _queue_list:
+            _queue_list.remove(task_id)
+        # 通知剩余等待任务更新位置
+        for i, tid in enumerate(_queue_list):
+            if tid in tasks and tasks[tid].get("status") == "queued":
+                pos = i + 1
+                msg = f"排队中，前方还有 {i} 个任务…" if i > 0 else "即将开始处理…"
+                tasks[tid].update({"queue_position": pos, "message": msg})
+                save_tasks(tasks)
+                await broadcast_task_update(tid, tasks[tid])
+        # 取出参数并执行
+        params = _task_params.pop(task_id, None)
+        if params and task_id in tasks:
+            try:
+                await process_video_task(task_id, *params)
+            except Exception as e:
+                logger.error(f"Worker 处理任务 {task_id} 出错: {e}")
+        _task_queue.task_done()
+
+
+@app.on_event("startup")
+async def startup_event():
+    global _task_queue
+    _task_queue = asyncio.Queue()
+    asyncio.create_task(_queue_worker())
 
 def _sanitize_title_for_filename(title: str) -> str:
     """将视频标题清洗为安全的文件名片段。"""
@@ -170,23 +262,28 @@ async def process_video(
         # 标记URL为正在处理
         processing_urls.add(url)
         
+        # 将任务加入队列
+        _queue_list.append(task_id)
+        _task_params[task_id] = (url, summary_language, api_key, model_base_url, model_id)
+        queue_pos = len(_queue_list)
+
         # 初始化任务状态
+        import time as _t
         tasks[task_id] = {
-            "status": "processing",
+            "status": "queued",
             "progress": 0,
-            "message": "开始处理视频...",
+            "queue_position": queue_pos,
+            "message": f"排队中，当前第 {queue_pos} 位…" if queue_pos > 1 else "即将开始处理…",
             "script": None,
             "summary": None,
             "error": None,
-            "url": url  # 保存URL用于去重
+            "url": url,
+            "created_at": _t.time()
         }
         save_tasks(tasks)
-        
-        # 创建并跟踪异步任务
-        task = asyncio.create_task(process_video_task(task_id, url, summary_language, api_key, model_base_url, model_id))
-        active_tasks[task_id] = task
-        
-        return {"task_id": task_id, "message": "任务已创建，正在处理中..."}
+        _task_queue.put_nowait(task_id)
+
+        return {"task_id": task_id, "message": "任务已加入队列", "queue_position": queue_pos}
         
     except Exception as e:
         logger.error(f"处理视频时出错: {str(e)}")
@@ -266,7 +363,13 @@ async def process_video_task(
             save_tasks(tasks)
             await broadcast_task_update(task_id, tasks[task_id])
 
-            raw_script = await transcriber.transcribe(audio_path)
+            _t1 = asyncio.create_task(_simulate_progress(task_id, 40, 53, interval=12))
+            try:
+                raw_script = await transcriber.transcribe(audio_path)
+            finally:
+                _t1.cancel()
+                try: await _t1
+                except asyncio.CancelledError: pass
 
         # 将Whisper原始转录保存为Markdown文件，供下载/归档
         try:
@@ -296,7 +399,13 @@ async def process_video_task(
         await broadcast_task_update(task_id, tasks[task_id])
         
         # 优化转录文本：修正错别字，按含义分段
-        script = await request_summarizer.optimize_transcript(raw_script)
+        _t2 = asyncio.create_task(_simulate_progress(task_id, 55, 76, interval=8))
+        try:
+            script = await request_summarizer.optimize_transcript(raw_script)
+        finally:
+            _t2.cancel()
+            try: await _t2
+            except asyncio.CancelledError: pass
         
         # 为转录文本添加标题，并在结尾添加来源链接
         script_with_title = f"# {video_title}\n\n{script}\n\nsource: {url}\n"
@@ -320,7 +429,13 @@ async def process_video_task(
             await broadcast_task_update(task_id, tasks[task_id])
             
             # 翻译转录文本
-            translation_content = await translator.translate_text(script, summary_language, detected_language)
+            _t3 = asyncio.create_task(_simulate_progress(task_id, 70, 78, interval=8))
+            try:
+                translation_content = await translator.translate_text(script, summary_language, detected_language)
+            finally:
+                _t3.cancel()
+                try: await _t3
+                except asyncio.CancelledError: pass
             translation_with_title = f"# {video_title}\n\n{translation_content}\n\nsource: {url}\n"
             
             # 保存翻译到文件
@@ -340,7 +455,13 @@ async def process_video_task(
         await broadcast_task_update(task_id, tasks[task_id])
         
         # 生成摘要
-        summary = await request_summarizer.summarize(script, summary_language, video_title)
+        _t4 = asyncio.create_task(_simulate_progress(task_id, 80, 97, interval=8))
+        try:
+            summary = await request_summarizer.summarize(script, summary_language, video_title)
+        finally:
+            _t4.cancel()
+            try: await _t4
+            except asyncio.CancelledError: pass
         summary_with_source = summary + f"\n\nsource: {url}\n"
         
         # 保存优化后的转录文本到文件
@@ -540,7 +661,12 @@ async def delete_task(task_id: str):
             task.cancel()
             logger.info(f"任务 {task_id} 已被取消")
         del active_tasks[task_id]
-    
+
+    # 如果任务还在队列中，移除之
+    if task_id in _queue_list:
+        _queue_list.remove(task_id)
+    _task_params.pop(task_id, None)
+
     # 从处理URL列表中移除
     task_url = tasks[task_id].get("url")
     if task_url:
@@ -548,6 +674,7 @@ async def delete_task(task_id: str):
     
     # 删除任务记录
     del tasks[task_id]
+    save_tasks(tasks)
     return {"message": "任务已取消并删除"}
 
 @app.get("/api/tasks/active")
@@ -566,3 +693,201 @@ async def get_active_tasks():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+
+# ── Serve history page ─────────────────────────────────────────────────────────
+@app.get("/history")
+async def history_page():
+    return FileResponse(str(PROJECT_ROOT / "static" / "history.html"))
+
+
+# ── Auth endpoints ─────────────────────────────────────────────────────────────
+from fastapi import Header as FastAPIHeader
+
+@app.post("/api/auth/register")
+async def register(
+    username: str = Form(...),
+    password: str = Form(...),
+):
+    if len(username) < 2 or len(username) > 30:
+        raise HTTPException(400, "用户名长度须在 2-30 个字符之间")
+    if len(password) < 6:
+        raise HTTPException(400, "密码至少 6 位")
+    db: Session = SessionLocal()
+    try:
+        existing = db.query(User).filter(User.username == username).first()
+        if existing:
+            raise HTTPException(400, "用户名已存在")
+        user = User(username=username, password_hash=auth_module.hash_password(password))
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        token = auth_module.create_token(user.id, user.username)
+        return {"token": token, "username": user.username, "user_id": user.id}
+    finally:
+        db.close()
+
+
+@app.post("/api/auth/login")
+async def login(
+    username: str = Form(...),
+    password: str = Form(...),
+):
+    db: Session = SessionLocal()
+    try:
+        user = db.query(User).filter(User.username == username).first()
+        if not user or not auth_module.verify_password(password, user.password_hash):
+            raise HTTPException(401, "用户名或密码错误")
+        token = auth_module.create_token(user.id, user.username)
+        return {"token": token, "username": user.username, "user_id": user.id}
+    finally:
+        db.close()
+
+
+@app.get("/api/auth/me")
+async def get_me(authorization: Optional[str] = FastAPIHeader(default=None)):
+    user_data = _get_user_from_request(authorization)
+    if not user_data:
+        raise HTTPException(401, "未登录或 Token 已过期")
+    return {"username": user_data["username"], "user_id": user_data["user_id"]}
+
+
+# ── History API ────────────────────────────────────────────────────────────────
+@app.get("/api/history")
+async def get_history(
+    authorization: Optional[str] = FastAPIHeader(default=None),
+    limit: int = 50,
+    offset: int = 0,
+):
+    user_data = _get_user_from_request(authorization)
+    if not user_data:
+        raise HTTPException(401, "需要登录")
+    db: Session = SessionLocal()
+    try:
+        items = (
+            db.query(HistoryModel)
+            .filter(HistoryModel.user_id == user_data["user_id"])
+            .order_by(HistoryModel.created_at.desc())
+            .offset(offset).limit(limit).all()
+        )
+        total = db.query(HistoryModel).filter(HistoryModel.user_id == user_data["user_id"]).count()
+        return {
+            "items": [
+                {
+                    "id": h.id, "task_id": h.task_id, "title": h.title,
+                    "url": h.url, "raw_script": h.raw_script, "script": h.script,
+                    "summary": h.summary, "translation": h.translation,
+                    "detected_language": h.detected_language, "summary_language": h.summary_language,
+                    "safe_title": h.safe_title, "short_id": h.short_id,
+                    "date": h.created_at.isoformat() if h.created_at else "",
+                }
+                for h in items
+            ],
+            "total": total,
+        }
+    finally:
+        db.close()
+
+
+@app.get("/api/history/by-url")
+async def get_history_by_url(
+    url: str,
+    authorization: Optional[str] = FastAPIHeader(default=None),
+):
+    """Check if a URL already exists in this user's history."""
+    user_data = _get_user_from_request(authorization)
+    if not user_data:
+        raise HTTPException(401, "需要登录")
+    db: Session = SessionLocal()
+    try:
+        h = (
+            db.query(HistoryModel)
+            .filter(HistoryModel.user_id == user_data["user_id"], HistoryModel.url == url)
+            .order_by(HistoryModel.created_at.desc())
+            .first()
+        )
+        if not h:
+            return {"found": False}
+        return {
+            "found": True,
+            "item": {
+                "id": h.id, "task_id": h.task_id, "title": h.title,
+                "url": h.url, "raw_script": h.raw_script, "script": h.script,
+                "summary": h.summary, "translation": h.translation,
+                "detected_language": h.detected_language,
+                "summary_language": h.summary_language,
+                "safe_title": h.safe_title, "short_id": h.short_id,
+                "date": h.created_at.isoformat() if h.created_at else "",
+            }
+        }
+    finally:
+        db.close()
+
+
+@app.post("/api/history")
+async def save_history_entry(
+    task_id:           str = Form(default=""),
+    title:             str = Form(default=""),
+    url:               str = Form(default=""),
+    raw_script:        str = Form(default=""),
+    script:            str = Form(default=""),
+    summary:           str = Form(default=""),
+    translation:       str = Form(default=""),
+    detected_language: str = Form(default=""),
+    summary_language:  str = Form(default=""),
+    safe_title:        str = Form(default=""),
+    short_id:          str = Form(default=""),
+    authorization: Optional[str] = FastAPIHeader(default=None),
+):
+    user_data = _get_user_from_request(authorization)
+    if not user_data:
+        raise HTTPException(401, "需要登录")
+    db: Session = SessionLocal()
+    try:
+        existing = None
+        if task_id:
+            existing = db.query(HistoryModel).filter(
+                HistoryModel.user_id == user_data["user_id"],
+                HistoryModel.task_id == task_id,
+            ).first()
+        if existing:
+            existing.title = title; existing.raw_script = raw_script
+            existing.script = script; existing.summary = summary
+            existing.translation = translation; existing.detected_language = detected_language
+            existing.summary_language = summary_language; existing.safe_title = safe_title
+            existing.short_id = short_id; existing.url = url
+            db.commit()
+            return {"id": existing.id, "created": False}
+        else:
+            h = HistoryModel(
+                user_id=user_data["user_id"], task_id=task_id, title=title, url=url,
+                raw_script=raw_script, script=script, summary=summary,
+                translation=translation, detected_language=detected_language,
+                summary_language=summary_language, safe_title=safe_title, short_id=short_id,
+            )
+            db.add(h); db.commit(); db.refresh(h)
+            return {"id": h.id, "created": True}
+    finally:
+        db.close()
+
+
+@app.delete("/api/history/{history_id}")
+async def delete_history_entry(
+    history_id: int,
+    authorization: Optional[str] = FastAPIHeader(default=None),
+):
+    user_data = _get_user_from_request(authorization)
+    if not user_data:
+        raise HTTPException(401, "需要登录")
+    db: Session = SessionLocal()
+    try:
+        h = db.query(HistoryModel).filter(
+            HistoryModel.id == history_id,
+            HistoryModel.user_id == user_data["user_id"],
+        ).first()
+        if not h:
+            raise HTTPException(404, "记录不存在")
+        db.delete(h); db.commit()
+        return {"message": "已删除"}
+    finally:
+        db.close()
