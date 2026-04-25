@@ -19,6 +19,28 @@ def _cookie_opts():
     return {}
 
 
+def _bilibili_headers(url: str = "") -> dict:
+    """为 BiliBili 链接注入必要的 Cookie 和 Header，避免 412 Precondition Failed。
+    buvid3 是 BiliBili 用来识别访客的 cookie，可以是随机 UUID，不需要登录。
+    """
+    if "bilibili.com" not in url and "b23.tv" not in url:
+        return {}
+    import uuid
+    buvid3 = str(uuid.uuid4())
+    return {
+        "http_headers": {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/124.0.0.0 Safari/537.36"
+            ),
+            "Referer": "https://www.bilibili.com",
+            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+            "Cookie": f"buvid3={buvid3}; CURRENT_FNVAL=4048;",
+        }
+    }
+
+
 class VideoProcessor:
     """视频处理器，使用yt-dlp下载和转换视频"""
     
@@ -62,7 +84,8 @@ class VideoProcessor:
 
         try:
             # 1. 快速探测：获取视频信息和字幕可用性，不下载任何内容
-            check_opts = {"quiet": True, "no_warnings": True, "noplaylist": True, "http_headers": {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36', 'Referer': 'https://www.bilibili.com', 'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'}, **_cookie_opts()}
+            bili_h = _bilibili_headers(url)
+            check_opts = {"quiet": True, "no_warnings": True, "noplaylist": True, **bili_h, **_cookie_opts()}
             with yt_dlp.YoutubeDL(check_opts) as ydl:
                 info = await asyncio.to_thread(ydl.extract_info, url, False)
 
@@ -105,7 +128,7 @@ class VideoProcessor:
                 "quiet": True,
                 "no_warnings": True,
                 "noplaylist": True,
-                "http_headers": {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36', 'Referer': 'https://www.bilibili.com', 'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'},
+                **bili_h,
             }
             with yt_dlp.YoutubeDL(dl_opts) as ydl:
                 await asyncio.to_thread(ydl.download, [url])
@@ -338,6 +361,11 @@ class VideoProcessor:
             
             logger.info(f"开始下载视频: {url}")
             
+            # 为 BiliBili 注入动态 buvid3 cookie（每次请求随机，避免 412）
+            bili_h = _bilibili_headers(url)
+            if bili_h:
+                ydl_opts.update(bili_h)
+
             # 直接同步执行，不使用线程池
             # 在FastAPI中，IO密集型操作可以直接await
             import asyncio
