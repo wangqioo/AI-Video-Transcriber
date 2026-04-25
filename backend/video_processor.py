@@ -26,6 +26,11 @@ class VideoProcessor:
         self.ydl_opts = {
             'format': 'bestaudio/best',  # 优先下载最佳音频源
             'outtmpl': '%(title)s.%(ext)s',
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Referer': 'https://www.bilibili.com',
+                'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            },
             'postprocessors': [{
                 'key': 'FFmpegExtractAudio',
                 # 直接在提取阶段转换为单声道 16k（空间小且稳定）
@@ -57,7 +62,7 @@ class VideoProcessor:
 
         try:
             # 1. 快速探测：获取视频信息和字幕可用性，不下载任何内容
-            check_opts = {"quiet": True, "no_warnings": True, "noplaylist": True, **_cookie_opts()}
+            check_opts = {"quiet": True, "no_warnings": True, "noplaylist": True, "http_headers": {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36', 'Referer': 'https://www.bilibili.com', 'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'}, **_cookie_opts()}
             with yt_dlp.YoutubeDL(check_opts) as ydl:
                 info = await asyncio.to_thread(ydl.extract_info, url, False)
 
@@ -100,6 +105,7 @@ class VideoProcessor:
                 "quiet": True,
                 "no_warnings": True,
                 "noplaylist": True,
+                "http_headers": {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36', 'Referer': 'https://www.bilibili.com', 'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'},
             }
             with yt_dlp.YoutubeDL(dl_opts) as ydl:
                 await asyncio.to_thread(ydl.download, [url])
