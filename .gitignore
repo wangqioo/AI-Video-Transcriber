@@ -48,6 +48,7 @@ temp/
 .env
 .env.local
 .env.production
+cookies.txt
 
 # Audio/Video files
 *.mp4

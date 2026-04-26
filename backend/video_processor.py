@@ -10,35 +10,71 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 # Cookie file path (optional, place in project root)
-_COOKIE_FILE_PATH = str(__import__("pathlib").Path(__file__).parent.parent / "cookies.txt")
-
-def _cookie_opts():
-    import os
-    if os.path.exists(_COOKIE_FILE_PATH):
-        return {"cookiefile": _COOKIE_FILE_PATH}
-    return {}
+_COOKIE_FILE_PATH = str(Path(__file__).parent.parent / "cookies.txt")
 
 
-def _bilibili_headers(url: str = "") -> dict:
-    """为 BiliBili 链接注入必要的 Cookie 和 Header，避免 412 Precondition Failed。
-    buvid3 是 BiliBili 用来识别访客的 cookie，可以是随机 UUID，不需要登录。
-    """
-    if "bilibili.com" not in url and "b23.tv" not in url:
-        return {}
-    import uuid
-    buvid3 = str(uuid.uuid4())
+def _is_bilibili_url(url: str = "") -> bool:
+    url = (url or "").lower()
+    return "bilibili.com" in url or "b23.tv" in url
+
+
+def _cookies_from_browser(value: str):
+    parts = [part.strip() for part in value.split(":")]
+    return tuple(part for part in parts if part)
+
+
+def _cookie_opts(url: str = ""):
+    opts = {}
+    cookie_file = os.getenv("YTDLP_COOKIE_FILE") or os.getenv("BILIBILI_COOKIE_FILE") or _COOKIE_FILE_PATH
+    if os.path.exists(cookie_file):
+        opts["cookiefile"] = cookie_file
+
+    browser = os.getenv("YTDLP_COOKIES_FROM_BROWSER")
+    if _is_bilibili_url(url):
+        browser = os.getenv("BILIBILI_COOKIES_FROM_BROWSER") or browser
+    if browser:
+        opts["cookiesfrombrowser"] = _cookies_from_browser(browser)
+    return opts
+
+
+def _base_headers() -> dict:
     return {
-        "http_headers": {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/124.0.0.0 Safari/537.36"
-            ),
-            "Referer": "https://www.bilibili.com",
-            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-            "Cookie": f"buvid3={buvid3}; CURRENT_FNVAL=4048;",
-        }
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
     }
+
+
+def _bilibili_opts(url: str = "", use_fallback_cookie: bool = True) -> dict:
+    if not _is_bilibili_url(url):
+        return {}
+    headers = _base_headers()
+    headers.update({
+        "Referer": "https://www.bilibili.com/",
+        "Origin": "https://www.bilibili.com",
+    })
+    if use_fallback_cookie:
+        buvid3 = uuid.uuid4().hex.upper()
+        headers["Cookie"] = f"buvid3={buvid3}; CURRENT_FNVAL=4048; b_lsid={uuid.uuid4().hex[:8].upper()}_1;"
+    return {
+        "http_headers": headers,
+        "extractor_args": {"bilibili": {"prefer_multi_flv": ["False"]}},
+    }
+
+
+def _bilibili_auth_message(error: Exception) -> str:
+    message = str(error)
+    if "HTTP Error 412" not in message and "Precondition Failed" not in message:
+        return message
+    return (
+        f"{message}\n"
+        "Bilibili 返回 412，通常需要真实浏览器 Cookie。请在项目根目录放置 cookies.txt，"
+        "或设置 BILIBILI_COOKIES_FROM_BROWSER=chrome/firefox/edge 后重启服务。"
+    )
 
 
 class VideoProcessor:
@@ -48,11 +84,7 @@ class VideoProcessor:
         self.ydl_opts = {
             'format': 'bestaudio/best',  # 优先下载最佳音频源
             'outtmpl': '%(title)s.%(ext)s',
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Referer': 'https://www.bilibili.com',
-                'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-            },
+            'http_headers': _base_headers(),
             'postprocessors': [{
                 'key': 'FFmpegExtractAudio',
                 # 直接在提取阶段转换为单声道 16k（空间小且稳定）
@@ -65,7 +97,6 @@ class VideoProcessor:
             'quiet': True,
             'no_warnings': True,
             'noplaylist': True,  # 强制只下载单个视频，不下载播放列表
-            **_cookie_opts(),
         }
     
     async def fetch_subtitles(self, url: str, output_dir: Path) -> tuple[Optional[str], Optional[str], Optional[str]]:
@@ -84,8 +115,9 @@ class VideoProcessor:
 
         try:
             # 1. 快速探测：获取视频信息和字幕可用性，不下载任何内容
-            bili_h = _bilibili_headers(url)
-            check_opts = {"quiet": True, "no_warnings": True, "noplaylist": True, **bili_h, **_cookie_opts()}
+            cookie_opts = _cookie_opts(url)
+            bili_opts = _bilibili_opts(url, use_fallback_cookie=not cookie_opts)
+            check_opts = {"quiet": True, "no_warnings": True, "noplaylist": True, **bili_opts, **cookie_opts}
             with yt_dlp.YoutubeDL(check_opts) as ydl:
                 info = await asyncio.to_thread(ydl.extract_info, url, False)
 
@@ -128,7 +160,8 @@ class VideoProcessor:
                 "quiet": True,
                 "no_warnings": True,
                 "noplaylist": True,
-                **bili_h,
+                **bili_opts,
+                **cookie_opts,
             }
             with yt_dlp.YoutubeDL(dl_opts) as ydl:
                 await asyncio.to_thread(ydl.download, [url])
@@ -361,10 +394,12 @@ class VideoProcessor:
             
             logger.info(f"开始下载视频: {url}")
             
-            # 为 BiliBili 注入动态 buvid3 cookie（每次请求随机，避免 412）
-            bili_h = _bilibili_headers(url)
-            if bili_h:
-                ydl_opts.update(bili_h)
+            # 为 BiliBili 注入浏览器请求头，并优先使用真实登录 Cookie。
+            cookie_opts = _cookie_opts(url)
+            bili_opts = _bilibili_opts(url, use_fallback_cookie=not cookie_opts)
+            if bili_opts:
+                ydl_opts.update(bili_opts)
+            ydl_opts.update(cookie_opts)
 
             # 直接同步执行，不使用线程池
             # 在FastAPI中，IO密集型操作可以直接await
@@ -422,8 +457,9 @@ class VideoProcessor:
             return audio_file, video_title
             
         except Exception as e:
-            logger.error(f"下载视频失败: {str(e)}")
-            raise Exception(f"下载视频失败: {str(e)}")
+            message = _bilibili_auth_message(e)
+            logger.error(f"下载视频失败: {message}")
+            raise Exception(f"下载视频失败: {message}")
     
     def get_video_info(self, url: str) -> dict:
         """
@@ -436,7 +472,9 @@ class VideoProcessor:
             视频信息字典
         """
         try:
-            with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
+            cookie_opts = _cookie_opts(url)
+            opts = {'quiet': True, **_bilibili_opts(url, use_fallback_cookie=not cookie_opts), **cookie_opts}
+            with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(url, download=False)
                 return {
                     'title': info.get('title', ''),
@@ -447,5 +485,6 @@ class VideoProcessor:
                     'view_count': info.get('view_count', 0),
                 }
         except Exception as e:
-            logger.error(f"获取视频信息失败: {str(e)}")
-            raise Exception(f"获取视频信息失败: {str(e)}")
+            message = _bilibili_auth_message(e)
+            logger.error(f"获取视频信息失败: {message}")
+            raise Exception(f"获取视频信息失败: {message}")
